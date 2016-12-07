@@ -17,13 +17,8 @@
 #
 #    You should have received a copy of the GNU Lesser General Public License
 #    along with EAV-Django.  If not, see <http://gnu.org/licenses/>.
-"""
-Admin
-~~~~~
-"""
 
-__all__ = ['BaseEntityAdmin', 'BaseSchemaAdmin', 'BaseEntityInline',
-           'StackedInline']
+__all__ = ['BaseEntityAdmin', 'BaseSchemaAdmin', 'BaseEntityStackedInline']
 
 
 # django
@@ -33,12 +28,9 @@ from django.contrib.admin.options import (
 )
 from django.forms.models import BaseInlineFormSet
 from django.utils.safestring import mark_safe
-from django.utils.translation import ugettext_lazy as _
-
+from bon.admin_extra import format_offer
 
 class BaseEntityAdmin(ModelAdmin):
-    """ Base class for entity admin classes.
-    """
     eav_fieldsets = None
 
     def render_change_form(self, request, context, **kwargs):
@@ -51,36 +43,38 @@ class BaseEntityAdmin(ModelAdmin):
         substitute some data.
         """
         form = context['adminform'].form
-        formset = context['inline_admin_formsets']
-
-        all_fields = form.fields.keys()
-        model_fields = form.base_fields.keys()
-        eav_fields = filter(lambda x: x not in model_fields, all_fields)
-
+        #  -------------------------------------------------------------------
+        #  -------------------------------------------------------------------
+        #  -------------------------------------------------------------------
+        #  -------------------------------------------------------------------
+        #  -------------------------------------------------------------------
+        #  -------------------------------------------------------------------
+        #  print context, kwargs, form.fields, request.GET['cat']
+        #  -------------------------------------------------------------------
         if self.eav_fieldsets:
-            fieldsets_eav = self.eav_fieldsets + ((_('Attributes'), {'classes': ('collapse',), 'fields': tuple(eav_fields)}),)
-            fieldsets = fieldsets_eav
+          fieldsets = self.eav_fieldsets
+          print('-------------------woops  check eav/admin')
+        # or infer correct data from the form
         else:
-            # or infer correct data from the form
-            fieldsets = [(None, {'fields': all_fields})]
+          fieldsets = format_offer(list(form.fields.keys()), request)
+          # fieldsets = [(None, {'fields': form.fields.keys()})]
 
         adminform = helpers.AdminForm(form, fieldsets,
                                       self.prepopulated_fields)
-        if formset:
-            inline_media = reduce( lambda x, y: x.media + y.media, formset )
-        else:
-            inline_media = []
-
-        media = mark_safe(self.media + adminform.media + inline_media)
+        media = mark_safe(self.media + adminform.media)
+        # this completly wipes all context from admin templates which are using adminform.model_admin (django-suit) !
+        # in order to have the config options we need model_admin intact !!!
+        adminform.model_admin = context['adminform'].model_admin
+        # print '<<<<<', dir(context['adminform'].model_admin)
         context.update(adminform=adminform, media=media)
+        # print '>>>>>', dir(context['adminform'].model_admin)
 
         super_meth = super(BaseEntityAdmin, self).render_change_form
         return super_meth(request, context, **kwargs)
 
 
 class BaseSchemaAdmin(ModelAdmin):
-    """ Base class for schema admin classes.
-    """
+
     list_display = ('title', 'name', 'datatype', 'help_text', 'required')
     prepopulated_fields = {'name': ('title',)}
 
@@ -124,4 +118,4 @@ class BaseEntityInline(InlineModelAdmin):
         instance = self.model(**kw)
         form = formset.form(request.POST, instance=instance)
 
-        return [(None, {'fields': form.fields.keys()})]
+        return [(None, {'fields': list(form.fields.keys())})]

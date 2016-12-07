@@ -17,10 +17,6 @@
 #
 #    You should have received a copy of the GNU Lesser General Public License
 #    along with EAV-Django.  If not, see <http://gnu.org/licenses/>.
-"""
-Object Managers
-~~~~~~~~~~~~~~~
-"""
 
 # TODO: .filter(size__isnull=True) --> .exclude(attrs__schema='size')
 
@@ -35,8 +31,9 @@ class BaseEntityManager(Manager):
     # TODO: refactor filter() and exclude()   -- see django.db.models.manager and ...query
 
     def exclude(self, *args, **kw):
+        print('eav exclude')
         qs = self.get_query_set().exclude(*args)
-        for lookup, value in kw.items():
+        for lookup, value in list(kw.items()):
             lookups = self._filter_by_lookup(qs, lookup, value)
             qs = qs.exclude(**lookups)
         return qs
@@ -54,7 +51,7 @@ class BaseEntityManager(Manager):
         """
 
         qs = self.get_query_set().filter(*args)
-        for lookup, value in kw.items():
+        for lookup, value in list(kw.items()):
             lookups = self._filter_by_lookup(qs, lookup, value)
             qs = qs.filter(**lookups)
         return qs
@@ -101,7 +98,7 @@ class BaseEntityManager(Manager):
                         d = self._filter_by_range_schema(qs, subname, subsublookup, value, schema)
                     else:
                         d = self._filter_by_simple_schema(qs, subname, subsublookup, value, schema)
-                    prefixed = dict(('%s__%s' % (name, k), v) for k, v in d.items())
+                    prefixed = dict(('%s__%s' % (name, k), v) for k, v in list(d.items()))
                     #assert 1==0, (schema, prefixed)
                     return prefixed
             # okay, treat as ordinary model field
@@ -164,10 +161,10 @@ class BaseEntityManager(Manager):
         except TypeError:
             raise TypeError('Expected a two-tuple, got "%s"' % value)
 
-        value_lookups = zip((
+        value_lookups = list(zip((
             'attrs__value_range_max__gte',
             'attrs__value_range_min__lte',
-        ), value)
+        ), value))
         conditions = dict((k,v) for k,v in value_lookups if v is not None)
         conditions.update({
             'attrs__schema': schema,
@@ -185,7 +182,7 @@ class BaseEntityManager(Manager):
             schema = schemata[lookup]
         except KeyError:
             # TODO: smarter error message, i.e. how could this happen and what to do
-            raise ValueError(u'Could not find schema for lookup "%s"' % lookup)
+            raise ValueError('Could not find schema for lookup "%s"' % lookup)
         sublookup = '__%s'%sublookup if sublookup else ''
         return {
             'attrs__schema': schema,
@@ -217,10 +214,10 @@ class BaseEntityManager(Manager):
                                ', '.join(fields), ', '.join(schemata)))
 
         # init entity with fields
-        instance = self.model(**dict((k,v) for k,v in kwargs.items() if k in fields))
+        instance = self.model(**dict((k,v) for k,v in list(kwargs.items()) if k in fields))
 
         # set attributes; instance will check schemata on save
-        for name, value in kwargs.items():
+        for name, value in list(kwargs.items()):
             setattr(instance, name, value)
 
         # save instance and EAV attributes

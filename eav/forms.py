@@ -17,10 +17,6 @@
 #
 #    You should have received a copy of the GNU Lesser General Public License
 #    along with EAV-Django.  If not, see <http://gnu.org/licenses/>.
-"""
-Forms
-~~~~~
-"""
 
 # python
 from copy import deepcopy
@@ -28,20 +24,18 @@ from copy import deepcopy
 # django
 from django.forms import (BooleanField, CharField, CheckboxSelectMultiple,
                           DateField, FloatField, ModelForm, ModelChoiceField,
-                          ModelMultipleChoiceField, ValidationError)
+                          ModelMultipleChoiceField, Textarea, ValidationError)
 from django.contrib.admin.widgets import AdminDateWidget, FilteredSelectMultiple, AdminRadioSelect    #, RelatedFieldWidgetWrapper
 from django.utils.translation import ugettext_lazy as _
 
 # this app
-from fields import RangeField
-
+from .fields import RangeField
+from bon.models import Category
 
 __all__ = ['BaseSchemaForm', 'BaseDynamicEntityForm']
 
 
 class BaseSchemaForm(ModelForm):
-    """ Base class for schema forms.
-    """
 
     def clean_name(self):
         "Avoid name clashes between static and dynamic attributes."
@@ -65,6 +59,7 @@ class BaseDynamicEntityForm(ModelForm):
 
     FIELD_CLASSES = {
         'text': CharField,
+        # 'textarea': Textarea,
         'float': FloatField,
         'date': DateField,
         'bool': BooleanField,
@@ -85,6 +80,14 @@ class BaseDynamicEntityForm(ModelForm):
     }
     def __init__(self, data=None, *args, **kwargs):
         super(BaseDynamicEntityForm, self).__init__(data, *args, **kwargs)
+        if kwargs and kwargs.get('initial', False):
+            try:
+                self.category = Category.objects.get(id = kwargs.get('initial').get('cat'))
+            except Category.DoesNotExist:
+                self.category = False
+        else:
+            self.category = False
+            print('0000000000', kwargs)
         self._build_dynamic_fields()
 
     def check_eav_allowed(self):
@@ -102,7 +105,7 @@ class BaseDynamicEntityForm(ModelForm):
         if not self.check_eav_allowed():
             return
 
-        for schema in self.instance.get_schemata():
+        for schema in self.instance.get_schemata(self.category):
 
             defaults = {
                 'label':     schema.title.capitalize(),
@@ -120,15 +123,22 @@ class BaseDynamicEntityForm(ModelForm):
                 defaults.update({'queryset': schema.get_choices(),
                                  'initial': choice.pk if choice else None,
                                  # if schema is required remove --------- from ui
-                                 'empty_label' : None if schema.required else u"---------"})
+                                 'empty_label' : None if schema.required else "---------"})
 
             extra = self.FIELD_EXTRA.get(datatype, {})
             if hasattr(extra, '__call__'):
                 extra = extra(schema)
             defaults.update(extra)
 
+            # if schema.name == 'opis' and datatype == 'text':
+            #     MappedField = self.FIELD_CLASSES['textarea']
+            #     defaults = {
+            #         'label':     schema.title.capitalize(),
+            #     }
+            # else:
             MappedField = self.FIELD_CLASSES[datatype]
             self.fields[schema.name] = MappedField(**defaults)
+            # import pdb; pdb.set_trace()
 
             # fill initial data (if attribute was already defined)
             value = getattr(self.instance, schema.name)
@@ -142,7 +152,6 @@ class BaseDynamicEntityForm(ModelForm):
 
         Returns ``instance``.
         """
-
         if self.errors:
             raise ValueError("The %s could not be saved because the data didn't"
                              " validate." % self.instance._meta.object_name)
@@ -152,7 +161,7 @@ class BaseDynamicEntityForm(ModelForm):
 
         # assign attributes if it came from eav
         schema_names = instance.get_schema_names()
-        for name in self.fields.keys():
+        for name in list(self.fields.keys()):
             if name in schema_names:
                 value = self.cleaned_data.get(name)
                 setattr(instance, name, value)

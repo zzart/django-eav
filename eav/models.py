@@ -17,10 +17,6 @@
 #
 #    You should have received a copy of the GNU Lesser General Public License
 #    along with EAV-Django.  If not, see <http://gnu.org/licenses/>.
-"""
-Models
-~~~~~~
-"""
 
 # django
 from django.contrib.contenttypes.models import ContentType
@@ -36,7 +32,7 @@ from autoslug.settings import slugify
 #from view_shortcuts.decorators import cached_property
 
 # this app
-from managers import BaseEntityManager
+from .managers import BaseEntityManager
 
 
 __all__ = ['BaseAttribute', 'BaseChoice', 'BaseEntity', 'BaseSchema']
@@ -46,8 +42,13 @@ def slugify_attr_name(name):
     return slugify(name.replace('_', '-')).replace('-', '_')
 
 
-def get_entity_lookups(entity):
-    ctype = ContentType.objects.get_for_model(entity)
+def get_entity_lookups(entity, using=False):
+    # print(using, dir(using), getattr(using._state, 'db'))
+    # NOTE: using db_manager to get proper database for quering contenttypes
+    if using:
+        ctype = ContentType.objects.db_manager(using._state.db).get_for_model(entity)
+    else:
+        ctype = ContentType.objects.get_for_model(entity)
     return {'entity_type': ctype, 'entity_id': entity.pk}
 
 
@@ -76,14 +77,14 @@ class BaseSchema(Model):
     title    = CharField(_('title'), max_length=250, help_text=_('user-friendly attribute name'))
     name     = AutoSlugField(_('name'), max_length=250, populate_from='title',
                              editable=True, blank=True, slugify=slugify_attr_name)
-    help_text = CharField(_('help text'), max_length=250, blank=True,
+    help_text = CharField(_('help text'), max_length=250, blank=True, null=True,
                           help_text=_('short description for administrator'))
     datatype = CharField(_('data type'), max_length=5, choices=DATATYPE_CHOICES)
 
-    required = BooleanField(_('required'), default=False)
-    searched = BooleanField(_('include in search'), default=False)  # i.e. full-text search? mb for text only
-    filtered = BooleanField(_('include in filters'), default=False)
-    sortable = BooleanField(_('allow sorting'), default=False)
+    required = BooleanField(_('required'))
+    searched = BooleanField(_('include in search'))  # i.e. full-text search? mb for text only
+    filtered = BooleanField(_('include in filters'))
+    sortable = BooleanField(_('allow sorting'))
 
     class Meta:
         abstract = True
@@ -91,21 +92,22 @@ class BaseSchema(Model):
         ordering = ['title']
 
     def __unicode__(self):
-        return u'%s (%s)%s' % (self.title, self.get_datatype_display(),
-                                u' %s'%_('required') if self.required else '')
+        return '%s (%s)%s' % (self.title, self.get_datatype_display(),
+                                ' %s'%_('required') if self.required else '')
 
     def get_choices(self):
         """
         Returns a queryset of choice objects bound to this schema.
         """
-        return self.choices.all()
+        # return self.choices.all()
+        return self.choice.all()
 
     def get_attrs(self, entity):
         """
         Returns available attributes for given entity instance.
         Handles many-to-one relations transparently.
         """
-        return self.attrs.filter(**get_entity_lookups(entity))
+        return self.attrs.filter(**get_entity_lookups(entity, self))
 
     def save_attr(self, entity, value):
         """
@@ -145,14 +147,14 @@ class BaseSchema(Model):
         # Attr instance (which is created or updated).
 
         schema = schema or self
-        lookups = dict(get_entity_lookups(entity), schema=schema, **extra)
+        lookups = dict(get_entity_lookups(entity, self), schema=schema, **extra)
         try:
             attr = self.attrs.get(**lookups)
         except self.attrs.model.DoesNotExist:
             attr = self.attrs.model(**lookups)
         if create_nulls or value != attr.value:
             attr.value = value
-            for k,v in extra.items():
+            for k,v in list(extra.items()):
                 setattr(attr, k, v)
             attr.save()
 
@@ -209,7 +211,9 @@ class BaseEntity(Model):
         :param eav: if True (default), EAV attributes are saved along with entity.
         """
         # save entity
-        super(BaseEntity, self).save(**kwargs)
+        # print(kwargs)
+        # super(BaseEntity, self).save(**kwargs)
+        super().save(**kwargs)
 
         # TODO: think about use cases; are we doing it right?
         #if not self.check_eav_allowed():
@@ -251,18 +255,18 @@ class BaseEntity(Model):
     def get_schemata_for_instance(self, qs):
         return qs
 
-    def get_schemata(self):
+    def get_schemata(self, cat=False):
         if hasattr(self, '_schemata_cache') and self._schemata_cache is not None:
             return self._schemata_cache
         all_schemata = self.get_schemata_for_model().select_related()
-        self._schemata_cache = self.get_schemata_for_instance(all_schemata)
+        self._schemata_cache = self.get_schemata_for_instance(all_schemata, cat)
         self._schemata_cache_dict = dict((s.name, s) for s in self._schemata_cache)
         return self._schemata_cache
 
     def get_schema_names(self):
         if not hasattr(self, '_schemata_cache_dict'):
             self.get_schemata()
-        return self._schemata_cache_dict.keys()
+        return list(self._schemata_cache_dict.keys())
 
     def get_schema(self, name):
         if not hasattr(self, '_schemata_cache_dict'):
@@ -303,9 +307,6 @@ class BaseEntity(Model):
 
 
 class BaseChoice(Model):
-    """ Base class for choices.  Concrete choice class must overload the
-    `schema` attribute.
-    """
     title = CharField(max_length=100)
     schema = NotImplemented
 
@@ -318,9 +319,6 @@ class BaseChoice(Model):
 
 
 class BaseAttribute(Model):
-    """ Base class for choices.  Concrete choice class must overload the
-    `schema` and `choice` attributes.
-    """
     entity_type = ForeignKey(ContentType)
     entity_id = IntegerField()
     entity = generic.GenericForeignKey(ct_field="entity_type", fk_field='entity_id')
@@ -342,7 +340,7 @@ class BaseAttribute(Model):
         unique_together = ('entity_type', 'entity_id', 'schema', 'choice')
 
     def __unicode__(self):
-        return u'%s: %s "%s"' % (self.entity, self.schema.title, self.value)
+        return '%s: %s "%s"' % (self.entity, self.schema.title, self.value)
 
     def _get_value(self):
         if self.schema.datatype in (self.schema.TYPE_ONE, self.schema.TYPE_MANY):

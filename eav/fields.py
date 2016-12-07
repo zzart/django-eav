@@ -17,23 +17,15 @@
 #
 #    You should have received a copy of the GNU Lesser General Public License
 #    along with EAV-Django.  If not, see <http://gnu.org/licenses/>.
-"""
-Fields
-~~~~~~
-"""
 
 # django
 from django import forms
 
 # this app
-from widgets import RangeWidget
-
-
-__all__ = ['RangeField']
+from .widgets import RangeWidget
 
 
 class RangeField(forms.MultiValueField):
-    "A multi-value field which consists of tho float fields."
     widget = RangeWidget
 
     def __init__(self, *args, **kwargs):

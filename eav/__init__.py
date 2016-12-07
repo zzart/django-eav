@@ -17,5 +17,3 @@
 #
 #    You should have received a copy of the GNU Lesser General Public License
 #    along with EAV-Django.  If not, see <http://gnu.org/licenses/>.
-
-__version__ = '1.4.7'

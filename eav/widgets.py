@@ -17,18 +17,12 @@
 #
 #    You should have received a copy of the GNU Lesser General Public License
 #    along with EAV-Django.  If not, see <http://gnu.org/licenses/>.
-"""
-Widgets
-~~~~~~~
-"""
 
 from django import forms
 from django.utils.translation import ugettext_lazy as _
 
 
 class RangeWidget(forms.MultiWidget):
-    "Represents a range of numbers."
-
     def __init__(self, attrs=None):
         widgets = (forms.TextInput(attrs=attrs), forms.TextInput(attrs=attrs))
         attrs = attrs or {}
@@ -40,5 +34,5 @@ class RangeWidget(forms.MultiWidget):
 
     def format_output(self, rendered_widgets):
         names = 'min max'.split()
-        pairs = zip(names, rendered_widgets)
+        pairs = list(zip(names, rendered_widgets))
         return _('%(min)s to %(max)s') % dict(pairs)

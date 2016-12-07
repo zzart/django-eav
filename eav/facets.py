@@ -17,10 +17,6 @@
 #
 #    You should have received a copy of the GNU Lesser General Public License
 #    along with EAV-Django.  If not, see <http://gnu.org/licenses/>.
-"""
-Facets
-~~~~~~
-"""
 
 # TODO: Revamp the whole stuff to add metaclass-based API.
 #       The thing works well as it is but the client code could be more readable.
@@ -38,18 +34,10 @@ from django.utils.translation import ugettext as _
 from view_shortcuts.decorators import cached_property
 
 # this app
-from fields import RangeField
-
-
-__all__ = ('Facet', 'TextFacet', 'MultiTextFacet', 'ManyToManyFacet',
-           'OneToManyFacet', 'IntegerFacet', 'RangeFacet', 'MultiRangeFacet',
-           'DateFacet', 'BooleanFacet', 'BaseFacetSet')
+from .fields import RangeField
 
 
 class Facet(object):
-    """ Base class for facets.  Concrete facets must overload at least the
-    `field_class` attribute.
-    """
     def __init__(self, facet_set, schema=None, field=None, lookup_prefix=''):
         self.facet_set = facet_set
         assert schema or field, 'Facet must be created with schema or field'
@@ -60,11 +48,10 @@ class Facet(object):
         self.lookup_prefix = lookup_prefix
 
     def __repr__(self):
-        return u'<%s: %s>' % (self.__class__.__name__, unicode(self))
+        return '<%s: %s>' % (self.__class__.__name__, str(self))
 
     def __unicode__(self):
-        return unicode(self.schema.title if self.schema
-                                       else self.field.verbose_name)
+        return str(self.schema.name if self.schema else self.field.verbose_name)
 
     extra = {}
 
@@ -80,7 +67,7 @@ class Facet(object):
     @property
     def form_field(self):
         "Returns appropriate form field."
-        label = unicode(self)
+        label = str(self)
         defaults = dict(required=False, label=label, widget=self.widget)
         defaults.update(self.extra)
         return self.field_class(**defaults)
@@ -141,7 +128,9 @@ class TextFacet(Facet):
 
 
 class MultiTextFacet(TextFacet):
-    "Represents a text field or schema. Allows multiple choices."
+    """
+    Represents a text field or schema. Allows multiple choices.
+    """
     field_class = forms.MultipleChoiceField
     widget = forms.CheckboxSelectMultiple
 
@@ -155,7 +144,6 @@ class MultiTextFacet(TextFacet):
 
 
 class ManyToManyFacet(Facet):
-    "Represents a many-to-many field."
     field_class = forms.models.ModelMultipleChoiceField
 
     def _get_queryset(self):
@@ -175,7 +163,6 @@ class ManyToManyFacet(Facet):
         return {'%s__in' % self.lookup_name: value} if value else {}
 
 class OneToManyFacet(Facet):
-    "Represents a one-to-many field."
     field_class = forms.models.ModelChoiceField
 
     def _get_queryset(self):
@@ -195,18 +182,20 @@ class OneToManyFacet(Facet):
 
 
 class IntegerFacet(Facet):
-    "Represents an integer field."
     field_class = forms.IntegerField
 
 
 class RangeFacet(Facet):
-    "A simple range facet: two widgets, one attribute value (number)."
+    """
+    A simple range facet: two widgets, one attribute value (number).
+    """
     field_class = RangeField
 
     def get_lookups(self, value):
         if not value or not any(value):
             return {}
         start, stop = value
+
         if start and not stop:
             return {'%s__gt' % self.lookup_name: start}
         if stop and not start:
@@ -215,7 +204,9 @@ class RangeFacet(Facet):
 
 
 class MultiRangeFacet(Facet):
-    "A complex range facet: two widgets, two attribute values (numbers)."
+    """
+    A complex range facet: two widgets, two attribute values (numbers).
+    """
     field_class = RangeField
 
     def get_lookups(self, value):
@@ -224,12 +215,10 @@ class MultiRangeFacet(Facet):
 
 
 class DateFacet(Facet):
-    "Represents a date field."
     field_class = forms.DateField
 
 
 class BooleanFacet(Facet):
-    "Represents a boolean field."
     field_class = forms.NullBooleanField
 
     # XXX this is funny but using RadioSelect for booleans is non-trivial
@@ -255,9 +244,6 @@ FACET_FOR_FIELD_DEFAULTS = {
 
 
 class BaseFacetSet(object):
-    """ Base class for facet sets.  Concrete classes must overload at least
-    the `get_queryset` attribute.
-    """
     filterable_fields = []
     sortable_fields = []
     custom_facets = {}
@@ -354,6 +340,7 @@ class BaseFacetSet(object):
             data  = self.form[facet.attr_name].data
             field = self.form.fields[facet.attr_name]
             value = field.clean(data)
+            # print data, field, value
             lookups.update(facet.get_lookups(value))
         return lookups
 
@@ -363,7 +350,7 @@ class BaseFacetSet(object):
             lookups = self.get_lookups()
         except forms.ValidationError:
             return self.get_queryset().none()
-        lookups = dict((str(k),v) for k,v in lookups.items())
+        lookups = dict((str(k),v) for k,v in list(lookups.items()))
 
         # assume to use the EntityManager's smart filter()
         qs = self.get_queryset(**lookups).distinct()
@@ -374,20 +361,19 @@ class BaseFacetSet(object):
         return qs
 
 
-    def sort_by_attribute(self, qs, name):
+    def sort_by_attribute(self, qs, name, direction=False):
         """
         A wrapper around standard order_by() method. Allows to sort by both normal
         fields and EAV attributes without thinking about implementation details.
         Usage::
-
             qs = sort_by_attributes(qs, 'price', 'colour')
-
         ...where `price` is a FloatField, and `colour` is the name of an EAV attribute
         represented by Schema and Attr models.
         """
         fields   = self.get_queryset().model._meta.get_all_field_names()
         schemata = self.sortable_names
-        direction = '-' if self.data.get('order_desc') else ''
+        if not direction:
+            direction = '-' if self.data.get('order_desc') else ''
         if name in fields:
             return qs.order_by('%s%s' % (direction, name))
         elif name in schemata:
@@ -400,3 +386,20 @@ class BaseFacetSet(object):
                             'attribute "%s". Available fields: %s. '
                             'Available schemata: %s.' % (name,
                             ', '.join(fields), ', '.join(schemata)))
+
+    def sort_by_attributes(self, qs, names):
+        """
+        [(name_of_field, ordering), ]
+        """
+        list_of_q = []
+        last_qs = qs
+        for (name , direction) in names:
+            try:
+                q = self.sort_by_attribute(last_qs, name, direction)
+            except (NameError, ValueError) as e:
+                print(e)
+            else:
+                list_of_q.append(q)
+                last_qs = q
+        return list_of_q.pop()
+
